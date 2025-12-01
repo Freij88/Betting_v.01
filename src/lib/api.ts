@@ -1,13 +1,13 @@
 import { OddsResponse, Sport } from '@/src/types/odds';
 
-const API_KEY = process.env.ODDS_API_KEY;
 const BASE_URL = 'https://api.the-odds-api.com/v4/sports';
 
 export async function getActiveSports(): Promise<Sport[]> {
-    if (!API_KEY) return [];
+    const apiKey = process.env.ODDS_API_KEY;
+    if (!apiKey) return [];
 
     try {
-        const response = await fetch(`${BASE_URL}/?all=false&apiKey=${API_KEY}`, { cache: 'force-cache' }); // Cache sports list for a while
+        const response = await fetch(`${BASE_URL}/?all=false&apiKey=${apiKey}`, { cache: 'force-cache' }); // Cache sports list for a while
         if (!response.ok) throw new Error("Failed to fetch sports");
 
         const data: Sport[] = await response.json();
@@ -21,14 +21,18 @@ export async function getActiveSports(): Promise<Sport[]> {
 }
 
 export async function getOdds(sportKey: string): Promise<OddsResponse[]> {
-    console.log('API Key Status:', API_KEY ? 'OK' : 'MISSING');
-    if (!API_KEY) {
+    const apiKey = process.env.ODDS_API_KEY;
+    console.log('API Key Status:', apiKey ? 'OK' : 'MISSING');
+
+    if (!apiKey) {
         console.error("ODDS_API_KEY is not defined.");
+        // Debug: Log available env vars (keys only) to see if we are in the right environment
+        console.log('Available Env Vars:', Object.keys(process.env).filter(k => !k.startsWith('npm_') && !k.startsWith('_')));
         return [];
     }
 
     try {
-        const url = `${BASE_URL}/${sportKey}/odds/?regions=eu&markets=h2h&oddsFormat=decimal&apiKey=${API_KEY}`;
+        const url = `${BASE_URL}/${sportKey}/odds/?regions=eu&markets=h2h&oddsFormat=decimal&apiKey=${apiKey}`;
         const response = await fetch(url, { cache: 'no-store' });
 
         if (!response.ok) {
