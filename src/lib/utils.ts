@@ -38,22 +38,22 @@ export function findBestOdds(match: OddsResponse, allowedBookmakers?: string[]):
     // Explicitly typed as requested to avoid "never" inference issues
     let marketOdds: MarketOdds | null = null;
 
-    match.bookmakers.forEach((bookie) => {
+    for (const bookie of match.bookmakers) {
         const isSharp = SHARP_BOOKMAKERS.includes(bookie.key);
 
         // Extract Market Odds (Prioritize Pinnacle if multiple sharps exist)
         if (isSharp) {
             if (!marketOdds || bookie.key === 'pinnacle') {
                 let home = 0, draw = 0, away = 0;
-                bookie.markets.forEach((market) => {
+                for (const market of bookie.markets) {
                     if (market.key === 'h2h') {
-                        market.outcomes.forEach((outcome) => {
+                        for (const outcome of market.outcomes) {
                             if (outcome.name === match.home_team) home = outcome.price;
                             else if (outcome.name === match.away_team) away = outcome.price;
                             else if (outcome.name === 'Draw') draw = outcome.price;
-                        });
+                        }
                     }
-                });
+                }
                 if (home > 0 && draw > 0 && away > 0) {
                     marketOdds = { home, draw, away, bookie: bookie.title };
                 }
@@ -62,13 +62,13 @@ export function findBestOdds(match: OddsResponse, allowedBookmakers?: string[]):
 
         // Check if this bookmaker is allowed for "Best Odds" calculation
         if (allowedBookmakers && !allowedBookmakers.includes(bookie.key)) {
-            return; // Skip this bookie for best odds if not in allowed list
+            continue; // Skip this bookie for best odds if not in allowed list
         }
 
         // Find Best Odds (Global max among allowed bookies)
-        bookie.markets.forEach((market) => {
+        for (const market of bookie.markets) {
             if (market.key === 'h2h') {
-                market.outcomes.forEach((outcome) => {
+                for (const outcome of market.outcomes) {
                     if (outcome.name === match.home_team) {
                         if (outcome.price > bestHome) {
                             bestHome = outcome.price;
@@ -85,10 +85,10 @@ export function findBestOdds(match: OddsResponse, allowedBookmakers?: string[]):
                             drawBookie = bookie.title;
                         }
                     }
-                });
+                }
             }
-        });
-    });
+        }
+    }
 
     // Calculate Value Edge
     const valueEdgeHome = marketOdds && marketOdds.home > 0 ? ((bestHome / marketOdds.home) - 1) * 100 : 0;
