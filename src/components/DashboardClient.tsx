@@ -4,11 +4,16 @@ import { useState, useMemo, useEffect } from 'react';
 import { OddsResponse, Sport } from '@/src/types/odds';
 import { findBestOdds, calculateArbitrage, BestOddsResult } from '@/src/lib/utils';
 import { fetchOddsAction } from '@/src/app/actions';
-import { SWEDISH_LICENSE_BOOKMAKERS } from '@/src/lib/constants';
+import { SWEDISH_BOOKMAKERS } from '@/src/lib/constants';
+import ValueBetModal from './ValueBetModal';
 
 interface DashboardClientProps {
     initialOdds: OddsResponse[];
     sports: Sport[];
+    debugStatus?: {
+        apiKeyExists: boolean;
+        rawMatchCount: number;
+    };
 }
 
 interface SelectedBet {
@@ -20,18 +25,16 @@ interface SelectedBet {
     edge: number;
 }
 
-export default function DashboardClient({ initialOdds, sports }: DashboardClientProps) {
+export default function DashboardClient({ initialOdds, sports, debugStatus }: DashboardClientProps) {
     const [selectedSport, setSelectedSport] = useState<string>('soccer_epl');
     const [odds, setOdds] = useState<OddsResponse[]>(initialOdds);
     const [loading, setLoading] = useState<boolean>(false);
 
     const [minEdge, setMinEdge] = useState<number>(0);
     const [showOnlyArbs, setShowOnlyArbs] = useState<boolean>(false);
-    const [onlySwedishLicense, setOnlySwedishLicense] = useState<boolean>(true);
+    const [swedishOnly, setSwedishOnly] = useState<boolean>(true);
 
     const [selectedBet, setSelectedBet] = useState<SelectedBet | null>(null);
-    const [bankroll, setBankroll] = useState<number>(10000);
-    const [kellyMultiplier, setKellyMultiplier] = useState<number>(0.25);
 
     // Fetch odds when selectedSport changes
     useEffect(() => {
@@ -54,7 +57,7 @@ export default function DashboardClient({ initialOdds, sports }: DashboardClient
     }, [selectedSport]);
 
     const filteredOdds = useMemo(() => {
-        const allowedBookies = onlySwedishLicense ? SWEDISH_LICENSE_BOOKMAKERS : undefined;
+        const allowedBookies = swedishOnly ? SWEDISH_BOOKMAKERS : undefined;
 
         return odds.map(match => {
             // Calculate best odds based on current filter
@@ -73,7 +76,7 @@ export default function DashboardClient({ initialOdds, sports }: DashboardClient
 
             return true;
         });
-    }, [odds, minEdge, showOnlyArbs, onlySwedishLicense]);
+    }, [odds, minEdge, showOnlyArbs, swedishOnly]);
 
     const handleBetClick = (match: OddsResponse, best: BestOddsResult, selection: 'Home' | 'Draw' | 'Away') => {
         let bestOdds = 0;
@@ -108,14 +111,6 @@ export default function DashboardClient({ initialOdds, sports }: DashboardClient
         });
     };
 
-    const calculateKellyStake = () => {
-        if (!selectedBet || selectedBet.marketOdds === 0) return 0;
-        const p = 1 / selectedBet.marketOdds;
-        const b = selectedBet.bestOdds - 1;
-        const f = (p * (b + 1) - 1) / b;
-        const stake = bankroll * f * kellyMultiplier;
-        return Math.max(0, stake);
-    };
 
     const groupedSports = useMemo(() => {
         const groups: { [key: string]: Sport[] } = {};
@@ -141,8 +136,8 @@ export default function DashboardClient({ initialOdds, sports }: DashboardClient
                                         <button
                                             onClick={() => setSelectedSport(sport.key)}
                                             className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${selectedSport === sport.key
-                                                    ? 'bg-emerald-600 text-white font-medium shadow-lg shadow-emerald-900/20'
-                                                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                                                ? 'bg-emerald-600 text-white font-medium shadow-lg shadow-emerald-900/20'
+                                                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
                                                 }`}
                                         >
                                             {sport.title}
@@ -164,6 +159,33 @@ export default function DashboardClient({ initialOdds, sports }: DashboardClient
                             {sports.find(s => s.key === selectedSport)?.title || 'Odds'}
                             {loading && <div className="animate-spin h-6 w-6 border-2 border-emerald-500 border-t-transparent rounded-full"></div>}
                         </h1>
+
+                        {/* Debug Info */}
+                        <div className="mb-4 space-y-2">
+                            {debugStatus && !debugStatus.apiKeyExists && (
+                                <div className="bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded-lg flex items-center gap-3">
+                                    <span className="text-2xl">🛑</span>
+                                    <div>
+                                        <p className="font-bold">CRITICAL: .env.local saknas!</p>
+                                        <p className="text-sm">Skapa filen i roten av projektet och lägg till din ODDS_API_KEY.</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {debugStatus && debugStatus.rawMatchCount === 0 && (
+                                <div className="bg-yellow-900/30 border border-yellow-500/50 text-yellow-200 px-4 py-3 rounded-lg flex items-center gap-3">
+                                    <span className="text-2xl">⚠️</span>
+                                    <div>
+                                        <p className="font-bold">API:et returnerade 0 matcher</p>
+                                        <p className="text-sm">Ligan kanske har uppehåll eller så är din API-kvot slut.</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="text-xs font-mono text-slate-500 bg-slate-900/50 inline-block px-2 py-1 rounded border border-slate-800">
+                                Debug: Hittade {odds.length} matcher från API. Visar {filteredOdds.length} efter filter.
+                            </div>
+                        </div>
 
                         <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-xl flex flex-col xl:flex-row gap-6 items-center justify-between backdrop-blur-sm">
                             <div className="flex flex-col md:flex-row items-center gap-6 w-full xl:w-auto">
@@ -197,12 +219,12 @@ export default function DashboardClient({ initialOdds, sports }: DashboardClient
                                     <label className="relative inline-flex items-center cursor-pointer">
                                         <input
                                             type="checkbox"
-                                            checked={onlySwedishLicense}
-                                            onChange={(e) => setOnlySwedishLicense(e.target.checked)}
+                                            checked={swedishOnly}
+                                            onChange={(e) => setSwedishOnly(e.target.checked)}
                                             className="sr-only peer"
                                         />
                                         <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                        <span className="ml-3 text-sm font-medium text-slate-300">🇸🇪 Svensk Licens</span>
+                                        <span className="ml-3 text-sm font-medium text-slate-300">🇸🇪 Endast Svensk Licens</span>
                                     </label>
                                 </div>
                             </div>
@@ -333,7 +355,7 @@ export default function DashboardClient({ initialOdds, sports }: DashboardClient
                             {!loading && filteredOdds.length === 0 && (
                                 <div className="text-center py-20 text-slate-500">
                                     <p className="text-xl">Inga matcher matchar dina filter eller så saknas data för denna liga.</p>
-                                    <button onClick={() => { setMinEdge(0); setShowOnlyArbs(false); setOnlySwedishLicense(false); }} className="mt-4 text-emerald-400 hover:underline">Återställ filter</button>
+                                    <button onClick={() => { setMinEdge(0); setShowOnlyArbs(false); setSwedishOnly(false); }} className="mt-4 text-emerald-400 hover:underline">Återställ filter</button>
                                 </div>
                             )}
                         </div>
@@ -343,92 +365,14 @@ export default function DashboardClient({ initialOdds, sports }: DashboardClient
 
             {/* Bet Calculator Modal */}
             {selectedBet && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedBet(null)}>
-                    <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex justify-between items-start mb-6">
-                            <div>
-                                <h3 className="text-xl font-bold text-white">Bet Calculator</h3>
-                                <p className="text-slate-400 text-sm">{selectedBet.match.home_team} vs {selectedBet.match.away_team}</p>
-                            </div>
-                            <button onClick={() => setSelectedBet(null)} className="text-slate-500 hover:text-white">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <div className="space-y-4 mb-6">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-slate-800 p-3 rounded-lg">
-                                    <div className="text-xs text-slate-500 uppercase">Ditt Val</div>
-                                    <div className="text-lg font-bold text-white">{selectedBet.selection}</div>
-                                </div>
-                                <div className="bg-slate-800 p-3 rounded-lg">
-                                    <div className="text-xs text-slate-500 uppercase">Odds ({selectedBet.bookie})</div>
-                                    <div className="text-lg font-bold text-emerald-400">{selectedBet.bestOdds.toFixed(2)}</div>
-                                </div>
-                            </div>
-
-                            <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
-                                <div className="flex justify-between mb-1">
-                                    <span className="text-sm text-slate-400">Market Price (Sharp)</span>
-                                    <span className="text-sm font-mono text-slate-200">{selectedBet.marketOdds > 0 ? selectedBet.marketOdds.toFixed(2) : 'N/A'}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-sm text-slate-400">Edge</span>
-                                    <span className={`text-sm font-bold ${selectedBet.edge > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                        {selectedBet.edge > 0 ? '+' : ''}{selectedBet.edge.toFixed(2)}%
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Bankkassa (SEK)</label>
-                                <input
-                                    type="number"
-                                    value={bankroll}
-                                    onChange={(e) => setBankroll(parseFloat(e.target.value))}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-emerald-500 transition-colors"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Kelly Multiplier ({kellyMultiplier})</label>
-                                <input
-                                    type="range"
-                                    min="0.1"
-                                    max="1"
-                                    step="0.05"
-                                    value={kellyMultiplier}
-                                    onChange={(e) => setKellyMultiplier(parseFloat(e.target.value))}
-                                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                                />
-                                <div className="flex justify-between text-xs text-slate-500 mt-1">
-                                    <span>Conservative (0.1)</span>
-                                    <span>Aggressive (1.0)</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bg-emerald-900/30 border border-emerald-500/30 rounded-xl p-4 text-center">
-                            <div className="text-sm text-emerald-200 mb-1">Rekommenderad Insats</div>
-                            <div className="text-3xl font-bold text-emerald-400">
-                                {selectedBet.marketOdds > 0 ? (
-                                    <>
-                                        {Math.round(calculateKellyStake()).toLocaleString()} kr
-                                    </>
-                                ) : (
-                                    <span className="text-lg text-yellow-400">Kan ej beräkna (Ingen marknadsdata)</span>
-                                )}
-                            </div>
-                            {selectedBet.marketOdds > 0 && (
-                                <div className="text-xs text-emerald-300/70 mt-1">
-                                    {((calculateKellyStake() / bankroll) * 100).toFixed(2)}% av kassan
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                <ValueBetModal
+                    match={selectedBet.match}
+                    selection={selectedBet.selection}
+                    myOdds={selectedBet.bestOdds}
+                    sharpOdds={selectedBet.marketOdds}
+                    bookie={selectedBet.bookie}
+                    onClose={() => setSelectedBet(null)}
+                />
             )}
         </div>
     );

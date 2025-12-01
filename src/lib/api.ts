@@ -21,6 +21,7 @@ export async function getActiveSports(): Promise<Sport[]> {
 }
 
 export async function getOdds(sportKey: string): Promise<OddsResponse[]> {
+    console.log('API Key Status:', API_KEY ? 'OK' : 'MISSING');
     if (!API_KEY) {
         console.error("ODDS_API_KEY is not defined.");
         return [];

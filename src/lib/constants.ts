@@ -1,4 +1,4 @@
-export const SWEDISH_LICENSE_BOOKMAKERS = [
+export const SWEDISH_BOOKMAKERS = [
     'unibet',
     'bet365',
     'betsson',
@@ -11,16 +11,7 @@ export const SWEDISH_LICENSE_BOOKMAKERS = [
     'betway',
     'paf',
     'svenskaspel',
-    'betfair_ex_eu', // Exchange has license
-    'mrgreen',
-    '888sport',
-    'bethard',
-    'snabbare',
-    'hajper',
-    'speedybet',
-    'campobet',
-    'betinia',
-    'no_account_bet'
+    'betfair_ex_eu'
 ];
 
 // Sharp bookmakers for market reference (even if unlicensed)

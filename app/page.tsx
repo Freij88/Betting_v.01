@@ -8,9 +8,14 @@ export default async function Home() {
     getActiveSports()
   ]);
 
+  const debugStatus = {
+    apiKeyExists: !!process.env.ODDS_API_KEY,
+    rawMatchCount: initialOdds.length
+  };
+
   return (
     <main className="min-h-screen bg-[#0f172a] text-slate-100">
-      <DashboardClient initialOdds={initialOdds} sports={sports} />
+      <DashboardClient initialOdds={initialOdds} sports={sports} debugStatus={debugStatus} />
     </main>
   );
 }
