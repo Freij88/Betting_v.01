@@ -1,0 +1,435 @@
+"use client";
+
+import { useState, useMemo, useEffect } from 'react';
+import { OddsResponse, Sport } from '@/src/types/odds';
+import { findBestOdds, calculateArbitrage, BestOddsResult } from '@/src/lib/utils';
+import { fetchOddsAction } from '@/src/app/actions';
+import { SWEDISH_LICENSE_BOOKMAKERS } from '@/src/lib/constants';
+
+interface DashboardClientProps {
+    initialOdds: OddsResponse[];
+    sports: Sport[];
+}
+
+interface SelectedBet {
+    match: OddsResponse;
+    selection: 'Home' | 'Draw' | 'Away';
+    bestOdds: number;
+    bookie: string;
+    marketOdds: number;
+    edge: number;
+}
+
+export default function DashboardClient({ initialOdds, sports }: DashboardClientProps) {
+    const [selectedSport, setSelectedSport] = useState<string>('soccer_epl');
+    const [odds, setOdds] = useState<OddsResponse[]>(initialOdds);
+    const [loading, setLoading] = useState<boolean>(false);
+
+    const [minEdge, setMinEdge] = useState<number>(0);
+    const [showOnlyArbs, setShowOnlyArbs] = useState<boolean>(false);
+    const [onlySwedishLicense, setOnlySwedishLicense] = useState<boolean>(true);
+
+    const [selectedBet, setSelectedBet] = useState<SelectedBet | null>(null);
+    const [bankroll, setBankroll] = useState<number>(10000);
+    const [kellyMultiplier, setKellyMultiplier] = useState<number>(0.25);
+
+    // Fetch odds when selectedSport changes
+    useEffect(() => {
+        if (selectedSport === 'soccer_epl' && odds === initialOdds) return;
+
+        async function loadOdds() {
+            setLoading(true);
+            try {
+                const newOdds = await fetchOddsAction(selectedSport);
+                setOdds(newOdds);
+            } catch (error) {
+                console.error("Failed to load odds", error);
+                setOdds([]);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        loadOdds();
+    }, [selectedSport]);
+
+    const filteredOdds = useMemo(() => {
+        const allowedBookies = onlySwedishLicense ? SWEDISH_LICENSE_BOOKMAKERS : undefined;
+
+        return odds.map(match => {
+            // Calculate best odds based on current filter
+            const best = findBestOdds(match, allowedBookies);
+            return { match, best };
+        }).filter(({ best }) => {
+            // Filter out matches with no valid odds after filtering bookies
+            if (best.bestHome === 0 && best.bestDraw === 0 && best.bestAway === 0) return false;
+
+            const arb = calculateArbitrage(best.bestHome, best.bestDraw, best.bestAway);
+
+            if (showOnlyArbs && !arb.isArb) return false;
+
+            const maxEdge = Math.max(best.valueEdgeHome, best.valueEdgeDraw, best.valueEdgeAway);
+            if (maxEdge < minEdge) return false;
+
+            return true;
+        });
+    }, [odds, minEdge, showOnlyArbs, onlySwedishLicense]);
+
+    const handleBetClick = (match: OddsResponse, best: BestOddsResult, selection: 'Home' | 'Draw' | 'Away') => {
+        let bestOdds = 0;
+        let bookie = '';
+        let marketOdds = 0;
+        let edge = 0;
+
+        if (selection === 'Home') {
+            bestOdds = best.bestHome;
+            bookie = best.homeBookie;
+            marketOdds = best.marketOdds?.home || 0;
+            edge = best.valueEdgeHome;
+        } else if (selection === 'Draw') {
+            bestOdds = best.bestDraw;
+            bookie = best.drawBookie;
+            marketOdds = best.marketOdds?.draw || 0;
+            edge = best.valueEdgeDraw;
+        } else {
+            bestOdds = best.bestAway;
+            bookie = best.awayBookie;
+            marketOdds = best.marketOdds?.away || 0;
+            edge = best.valueEdgeAway;
+        }
+
+        setSelectedBet({
+            match,
+            selection,
+            bestOdds,
+            bookie,
+            marketOdds,
+            edge
+        });
+    };
+
+    const calculateKellyStake = () => {
+        if (!selectedBet || selectedBet.marketOdds === 0) return 0;
+        const p = 1 / selectedBet.marketOdds;
+        const b = selectedBet.bestOdds - 1;
+        const f = (p * (b + 1) - 1) / b;
+        const stake = bankroll * f * kellyMultiplier;
+        return Math.max(0, stake);
+    };
+
+    const groupedSports = useMemo(() => {
+        const groups: { [key: string]: Sport[] } = {};
+        sports.forEach(sport => {
+            if (!groups[sport.group]) groups[sport.group] = [];
+            groups[sport.group].push(sport);
+        });
+        return groups;
+    }, [sports]);
+
+    return (
+        <div className="flex flex-col md:flex-row min-h-screen">
+            {/* Sidebar */}
+            <aside className="w-full md:w-1/4 bg-slate-900 border-r border-slate-800 p-4 overflow-y-auto h-screen sticky top-0 hidden md:block">
+                <h2 className="text-xl font-bold text-white mb-6 px-2">Sports</h2>
+                <div className="space-y-6">
+                    {Object.entries(groupedSports).map(([group, groupSports]) => (
+                        <div key={group}>
+                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2">{group}</h3>
+                            <ul className="space-y-1">
+                                {groupSports.map(sport => (
+                                    <li key={sport.key}>
+                                        <button
+                                            onClick={() => setSelectedSport(sport.key)}
+                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${selectedSport === sport.key
+                                                    ? 'bg-emerald-600 text-white font-medium shadow-lg shadow-emerald-900/20'
+                                                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                                                }`}
+                                        >
+                                            {sport.title}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    ))}
+                </div>
+            </aside>
+
+            {/* Main Content */}
+            <main className="w-full md:w-3/4 bg-slate-950 p-4 md:p-8 overflow-y-auto">
+                <div className="max-w-6xl mx-auto">
+                    {/* Header & Filters */}
+                    <div className="mb-8">
+                        <h1 className="text-3xl font-bold text-white mb-6 flex items-center gap-3">
+                            {sports.find(s => s.key === selectedSport)?.title || 'Odds'}
+                            {loading && <div className="animate-spin h-6 w-6 border-2 border-emerald-500 border-t-transparent rounded-full"></div>}
+                        </h1>
+
+                        <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-xl flex flex-col xl:flex-row gap-6 items-center justify-between backdrop-blur-sm">
+                            <div className="flex flex-col md:flex-row items-center gap-6 w-full xl:w-auto">
+                                <div className="flex flex-col gap-2 w-full md:w-48">
+                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex justify-between">
+                                        Min Edge: <span className="text-emerald-400">{minEdge}%</span>
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="10"
+                                        step="0.5"
+                                        value={minEdge}
+                                        onChange={(e) => setMinEdge(parseFloat(e.target.value))}
+                                        className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                                    />
+                                </div>
+
+                                <div className="flex items-center gap-4">
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={showOnlyArbs}
+                                            onChange={(e) => setShowOnlyArbs(e.target.checked)}
+                                            className="sr-only peer"
+                                        />
+                                        <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                                        <span className="ml-3 text-sm font-medium text-slate-300">Endast Arbitrage</span>
+                                    </label>
+
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={onlySwedishLicense}
+                                            onChange={(e) => setOnlySwedishLicense(e.target.checked)}
+                                            className="sr-only peer"
+                                        />
+                                        <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                        <span className="ml-3 text-sm font-medium text-slate-300">🇸🇪 Svensk Licens</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={() => { setLoading(true); fetchOddsAction(selectedSport).then(setOdds).finally(() => setLoading(false)); }}
+                                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 border border-slate-700 whitespace-nowrap"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Table */}
+                    {loading ? (
+                        <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+                            <div className="animate-spin h-10 w-10 border-4 border-emerald-500 border-t-transparent rounded-full mb-4"></div>
+                            <p>Hämtar odds...</p>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="border-b border-slate-800 text-slate-400 text-sm uppercase tracking-wider">
+                                        <th className="p-4 w-1/4">Match & Tid</th>
+                                        <th className="p-4 w-1/4 bg-slate-900/50">Market (Facit)</th>
+                                        <th className="p-4 w-1/2">Bästa Odds (Vi)</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800">
+                                    {filteredOdds.map(({ match, best }) => {
+                                        const arb = calculateArbitrage(best.bestHome, best.bestDraw, best.bestAway);
+
+                                        return (
+                                            <tr key={match.id} className="hover:bg-slate-900/50 transition-colors group">
+                                                {/* Column 1: Match Info */}
+                                                <td className="p-4 align-top">
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className="text-xs font-medium text-slate-500">{new Date(match.commence_time).toLocaleString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                                                        <div className="font-bold text-white text-lg">{match.home_team}</div>
+                                                        <div className="text-slate-400 text-sm">vs</div>
+                                                        <div className="font-bold text-white text-lg">{match.away_team}</div>
+                                                        {arb.isArb && (
+                                                            <span className="mt-2 inline-block bg-yellow-400 text-black text-xs font-bold px-2 py-0.5 rounded animate-pulse w-fit">
+                                                                ARBITRAGE {arb.margin.toFixed(2)}%
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </td>
+
+                                                {/* Column 2: Market Odds (Sharp) */}
+                                                <td className="p-4 align-top bg-slate-900/30 border-x border-slate-800">
+                                                    {!best.marketOdds ? (
+                                                        <div className="flex items-center gap-2 text-yellow-500 bg-yellow-500/10 p-2 rounded border border-yellow-500/20">
+                                                            <span className="text-xs font-bold">NO MARKET DATA</span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-3">
+                                                            <div className="text-xs text-slate-500 font-mono mb-1">{best.marketOdds.bookie}</div>
+                                                            <div className="flex justify-between items-center">
+                                                                <span className="text-slate-400 text-sm">1</span>
+                                                                <span className="font-mono text-slate-200">{best.marketOdds.home.toFixed(2)}</span>
+                                                            </div>
+                                                            <div className="flex justify-between items-center">
+                                                                <span className="text-slate-400 text-sm">X</span>
+                                                                <span className="font-mono text-slate-200">{best.marketOdds.draw.toFixed(2)}</span>
+                                                            </div>
+                                                            <div className="flex justify-between items-center">
+                                                                <span className="text-slate-400 text-sm">2</span>
+                                                                <span className="font-mono text-slate-200">{best.marketOdds.away.toFixed(2)}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </td>
+
+                                                {/* Column 3: Best Odds (Soft) */}
+                                                <td className="p-4 align-top">
+                                                    <div className="grid grid-cols-3 gap-4">
+                                                        {/* Home */}
+                                                        <div
+                                                            onClick={() => handleBetClick(match, best, 'Home')}
+                                                            className={`p-3 rounded border cursor-pointer transition-all hover:scale-105 active:scale-95 ${best.valueEdgeHome > 0 ? 'bg-emerald-900/20 border-emerald-500/50 hover:bg-emerald-900/30' : 'bg-slate-800/50 border-slate-700 hover:bg-slate-700'}`}
+                                                        >
+                                                            <div className="text-xs text-slate-500 mb-1">HEMMA</div>
+                                                            <div className="text-xl font-bold text-white">{best.bestHome.toFixed(2)}</div>
+                                                            <div className="text-xs text-slate-400 truncate" title={best.homeBookie}>{best.homeBookie}</div>
+                                                            {best.valueEdgeHome > 0 && (
+                                                                <div className="mt-1 text-xs font-bold text-emerald-400">+{best.valueEdgeHome.toFixed(1)}% Edge</div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Draw */}
+                                                        <div
+                                                            onClick={() => handleBetClick(match, best, 'Draw')}
+                                                            className={`p-3 rounded border cursor-pointer transition-all hover:scale-105 active:scale-95 ${best.valueEdgeDraw > 0 ? 'bg-emerald-900/20 border-emerald-500/50 hover:bg-emerald-900/30' : 'bg-slate-800/50 border-slate-700 hover:bg-slate-700'}`}
+                                                        >
+                                                            <div className="text-xs text-slate-500 mb-1">OAVGJORT</div>
+                                                            <div className="text-xl font-bold text-white">{best.bestDraw.toFixed(2)}</div>
+                                                            <div className="text-xs text-slate-400 truncate" title={best.drawBookie}>{best.drawBookie}</div>
+                                                            {best.valueEdgeDraw > 0 && (
+                                                                <div className="mt-1 text-xs font-bold text-emerald-400">+{best.valueEdgeDraw.toFixed(1)}% Edge</div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Away */}
+                                                        <div
+                                                            onClick={() => handleBetClick(match, best, 'Away')}
+                                                            className={`p-3 rounded border cursor-pointer transition-all hover:scale-105 active:scale-95 ${best.valueEdgeAway > 0 ? 'bg-emerald-900/20 border-emerald-500/50 hover:bg-emerald-900/30' : 'bg-slate-800/50 border-slate-700 hover:bg-slate-700'}`}
+                                                        >
+                                                            <div className="text-xs text-slate-500 mb-1">BORTA</div>
+                                                            <div className="text-xl font-bold text-white">{best.bestAway.toFixed(2)}</div>
+                                                            <div className="text-xs text-slate-400 truncate" title={best.awayBookie}>{best.awayBookie}</div>
+                                                            {best.valueEdgeAway > 0 && (
+                                                                <div className="mt-1 text-xs font-bold text-emerald-400">+{best.valueEdgeAway.toFixed(1)}% Edge</div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+
+                            {!loading && filteredOdds.length === 0 && (
+                                <div className="text-center py-20 text-slate-500">
+                                    <p className="text-xl">Inga matcher matchar dina filter eller så saknas data för denna liga.</p>
+                                    <button onClick={() => { setMinEdge(0); setShowOnlyArbs(false); setOnlySwedishLicense(false); }} className="mt-4 text-emerald-400 hover:underline">Återställ filter</button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </main>
+
+            {/* Bet Calculator Modal */}
+            {selectedBet && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedBet(null)}>
+                    <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex justify-between items-start mb-6">
+                            <div>
+                                <h3 className="text-xl font-bold text-white">Bet Calculator</h3>
+                                <p className="text-slate-400 text-sm">{selectedBet.match.home_team} vs {selectedBet.match.away_team}</p>
+                            </div>
+                            <button onClick={() => setSelectedBet(null)} className="text-slate-500 hover:text-white">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="space-y-4 mb-6">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-slate-800 p-3 rounded-lg">
+                                    <div className="text-xs text-slate-500 uppercase">Ditt Val</div>
+                                    <div className="text-lg font-bold text-white">{selectedBet.selection}</div>
+                                </div>
+                                <div className="bg-slate-800 p-3 rounded-lg">
+                                    <div className="text-xs text-slate-500 uppercase">Odds ({selectedBet.bookie})</div>
+                                    <div className="text-lg font-bold text-emerald-400">{selectedBet.bestOdds.toFixed(2)}</div>
+                                </div>
+                            </div>
+
+                            <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
+                                <div className="flex justify-between mb-1">
+                                    <span className="text-sm text-slate-400">Market Price (Sharp)</span>
+                                    <span className="text-sm font-mono text-slate-200">{selectedBet.marketOdds > 0 ? selectedBet.marketOdds.toFixed(2) : 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-sm text-slate-400">Edge</span>
+                                    <span className={`text-sm font-bold ${selectedBet.edge > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {selectedBet.edge > 0 ? '+' : ''}{selectedBet.edge.toFixed(2)}%
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Bankkassa (SEK)</label>
+                                <input
+                                    type="number"
+                                    value={bankroll}
+                                    onChange={(e) => setBankroll(parseFloat(e.target.value))}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Kelly Multiplier ({kellyMultiplier})</label>
+                                <input
+                                    type="range"
+                                    min="0.1"
+                                    max="1"
+                                    step="0.05"
+                                    value={kellyMultiplier}
+                                    onChange={(e) => setKellyMultiplier(parseFloat(e.target.value))}
+                                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                                />
+                                <div className="flex justify-between text-xs text-slate-500 mt-1">
+                                    <span>Conservative (0.1)</span>
+                                    <span>Aggressive (1.0)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-emerald-900/30 border border-emerald-500/30 rounded-xl p-4 text-center">
+                            <div className="text-sm text-emerald-200 mb-1">Rekommenderad Insats</div>
+                            <div className="text-3xl font-bold text-emerald-400">
+                                {selectedBet.marketOdds > 0 ? (
+                                    <>
+                                        {Math.round(calculateKellyStake()).toLocaleString()} kr
+                                    </>
+                                ) : (
+                                    <span className="text-lg text-yellow-400">Kan ej beräkna (Ingen marknadsdata)</span>
+                                )}
+                            </div>
+                            {selectedBet.marketOdds > 0 && (
+                                <div className="text-xs text-emerald-300/70 mt-1">
+                                    {((calculateKellyStake() / bankroll) * 100).toFixed(2)}% av kassan
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
