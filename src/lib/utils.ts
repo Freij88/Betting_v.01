@@ -15,7 +15,7 @@ export interface BestOddsResult {
     drawBookie: string;
     bestAway: number;
     awayBookie: string;
-    marketOdds?: MarketOdds;
+    marketOdds?: MarketOdds | null;
     valueEdgeHome: number;
     valueEdgeDraw: number;
     valueEdgeAway: number;
@@ -35,13 +35,13 @@ export function findBestOdds(match: OddsResponse, allowedBookmakers?: string[]):
     let bestAway = 0;
     let awayBookie = '-';
 
-    let marketOdds: MarketOdds | undefined = undefined;
+    // Explicitly typed as requested to avoid "never" inference issues
+    let marketOdds: MarketOdds | null = null;
 
     match.bookmakers.forEach((bookie) => {
         const isSharp = SHARP_BOOKMAKERS.includes(bookie.key);
 
         // Extract Market Odds (Prioritize Pinnacle if multiple sharps exist)
-        // We ALWAYS do this, regardless of allowedBookmakers, to have a reference point.
         if (isSharp) {
             if (!marketOdds || bookie.key === 'pinnacle') {
                 let home = 0, draw = 0, away = 0;
