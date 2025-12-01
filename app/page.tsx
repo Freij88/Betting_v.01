@@ -1,6 +1,8 @@
 import { getOdds, getActiveSports } from '@/src/lib/api';
 import DashboardClient from '@/src/components/DashboardClient';
 
+export const dynamic = 'force-dynamic';
+
 export default async function Home() {
   // Fetch initial data on the server
   const [initialOdds, sports] = await Promise.all([
