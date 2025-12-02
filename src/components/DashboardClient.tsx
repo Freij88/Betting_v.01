@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useMemo, useEffect } from 'react';
-import { OddsResponse, Sport } from '@/src/types/odds';
+import { OddsResponse, Sport, Bookmaker } from '@/src/types/odds';
 import { findBestOdds, calculateArbitrage, BestOddsResult } from '@/src/lib/utils';
 import { fetchOddsAction } from '@/src/app/actions';
 import { SWEDISH_BOOKMAKERS } from '@/src/lib/constants';
 import ValueBetModal from './ValueBetModal';
+import BookieSelector from './BookieSelector';
 
 interface DashboardClientProps {
     initialOdds: OddsResponse[];
@@ -32,7 +33,7 @@ export default function DashboardClient({ initialOdds, sports, debugStatus }: Da
 
     const [minEdge, setMinEdge] = useState<number>(0);
     const [showOnlyArbs, setShowOnlyArbs] = useState<boolean>(false);
-    const [swedishOnly, setSwedishOnly] = useState<boolean>(true);
+    const [selectedBookies, setSelectedBookies] = useState<string[]>(SWEDISH_BOOKMAKERS);
 
     const [selectedBet, setSelectedBet] = useState<SelectedBet | null>(null);
 
@@ -56,12 +57,21 @@ export default function DashboardClient({ initialOdds, sports, debugStatus }: Da
         loadOdds();
     }, [selectedSport]);
 
-    const filteredOdds = useMemo(() => {
-        const allowedBookies = swedishOnly ? SWEDISH_BOOKMAKERS : undefined;
+    // Extract all unique bookmakers from the odds data
+    const allBookies = useMemo(() => {
+        const bookies = new Set<string>();
+        odds.forEach(match => {
+            match.bookmakers.forEach(bookie => {
+                bookies.add(bookie.key);
+            });
+        });
+        return Array.from(bookies).sort();
+    }, [odds]);
 
+    const filteredOdds = useMemo(() => {
         return odds.map(match => {
             // Calculate best odds based on current filter
-            const best = findBestOdds(match, allowedBookies);
+            const best = findBestOdds(match, selectedBookies);
             return { match, best };
         }).filter(({ best }) => {
             // Filter out matches with no valid odds after filtering bookies
@@ -76,7 +86,13 @@ export default function DashboardClient({ initialOdds, sports, debugStatus }: Da
 
             return true;
         });
-    }, [odds, minEdge, showOnlyArbs, swedishOnly]);
+    }, [odds, minEdge, showOnlyArbs, selectedBookies]);
+
+    const handleResetFilters = () => {
+        setMinEdge(0);
+        setShowOnlyArbs(false);
+        setSelectedBookies(SWEDISH_BOOKMAKERS);
+    };
 
     const handleBetClick = (match: OddsResponse, best: BestOddsResult, selection: 'Home' | 'Draw' | 'Away') => {
         let bestOdds = 0;
@@ -216,16 +232,14 @@ export default function DashboardClient({ initialOdds, sports, debugStatus }: Da
                                         <span className="ml-3 text-sm font-medium text-slate-300">Endast Arbitrage</span>
                                     </label>
 
-                                    <label className="relative inline-flex items-center cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={swedishOnly}
-                                            onChange={(e) => setSwedishOnly(e.target.checked)}
-                                            className="sr-only peer"
+                                    <div className="flex flex-col gap-2 w-full md:w-auto">
+                                        <label className="text-xs text-slate-400 font-medium">Bookmakers</label>
+                                        <BookieSelector
+                                            allBookies={allBookies}
+                                            selectedBookies={selectedBookies}
+                                            onChange={setSelectedBookies}
                                         />
-                                        <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                        <span className="ml-3 text-sm font-medium text-slate-300">🇸🇪 Endast Svensk Licens</span>
-                                    </label>
+                                    </div>
                                 </div>
                             </div>
 
@@ -280,27 +294,46 @@ export default function DashboardClient({ initialOdds, sports, debugStatus }: Da
 
                                                 {/* Column 2: Market Odds (Sharp) */}
                                                 <td className="p-4 align-top bg-slate-900/30 border-x border-slate-800">
-                                                    {!best.marketOdds ? (
-                                                        <div className="flex items-center gap-2 text-yellow-500 bg-yellow-500/10 p-2 rounded border border-yellow-500/20">
-                                                            <span className="text-xs font-bold">NO MARKET DATA</span>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="space-y-3">
-                                                            <div className="text-xs text-slate-500 font-mono mb-1">{best.marketOdds.bookie}</div>
-                                                            <div className="flex justify-between items-center">
-                                                                <span className="text-slate-400 text-sm">1</span>
-                                                                <span className="font-mono text-slate-200">{best.marketOdds.home.toFixed(2)}</span>
-                                                            </div>
-                                                            <div className="flex justify-between items-center">
-                                                                <span className="text-slate-400 text-sm">X</span>
-                                                                <span className="font-mono text-slate-200">{best.marketOdds.draw.toFixed(2)}</span>
-                                                            </div>
-                                                            <div className="flex justify-between items-center">
-                                                                <span className="text-slate-400 text-sm">2</span>
-                                                                <span className="font-mono text-slate-200">{best.marketOdds.away.toFixed(2)}</span>
-                                                            </div>
-                                                        </div>
-                                                    )}
+                                                    <div className="space-y-3">
+                                                        <div className="text-xs text-slate-500 font-mono mb-1">{best.marketOdds?.bookie || 'N/A'}</div>
+                                                        {['home', 'draw', 'away'].map((outcome, index) => {
+                                                            const key = outcome as 'home' | 'draw' | 'away';
+                                                            return (
+                                                                <div key={outcome} className="flex justify-between items-center">
+                                                                    <span className="text-slate-400 text-sm">{index === 0 ? '1' : index === 1 ? 'X' : '2'}</span>
+                                                                    <div className="text-right">
+                                                                        <div className="text-xs text-slate-400 mb-1">Marknadsvärde</div>
+                                                                        {best.marketOdds ? (
+                                                                            <div className="flex flex-col items-end gap-1">
+                                                                                {best.isLayEdge && best.layOdds ? (
+                                                                                    <div className="flex items-center gap-2" title="Baserat på Betfair Lay Odds">
+                                                                                        <span className="text-xs font-bold text-pink-400 bg-pink-900/20 px-1.5 py-0.5 rounded border border-pink-900/30">LAY</span>
+                                                                                        <span className="text-lg font-bold text-pink-300">{best.layOdds[key].toFixed(2)}</span>
+                                                                                    </div>
+                                                                                ) : best.fairOdds ? (
+                                                                                    <div className="flex items-center gap-2" title="Fair Odds (No-Vig)">
+                                                                                        <span className="text-xs font-bold text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">FAIR</span>
+                                                                                        <span className="text-lg font-bold text-slate-300">{best.fairOdds[key].toFixed(2)}</span>
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <span className="text-lg font-bold text-slate-500">-</span>
+                                                                                )}
+
+                                                                                {/* Always show Pinnacle if available and different from primary display */}
+                                                                                {best.pinnacleOdds && (
+                                                                                    <div className="text-xs text-slate-500 font-mono">
+                                                                                        Pin: {best.pinnacleOdds[key].toFixed(2)}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <span className="text-slate-600">-</span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </td>
 
                                                 {/* Column 3: Best Odds (Soft) */}
@@ -355,7 +388,7 @@ export default function DashboardClient({ initialOdds, sports, debugStatus }: Da
                             {!loading && filteredOdds.length === 0 && (
                                 <div className="text-center py-20 text-slate-500">
                                     <p className="text-xl">Inga matcher matchar dina filter eller så saknas data för denna liga.</p>
-                                    <button onClick={() => { setMinEdge(0); setShowOnlyArbs(false); setSwedishOnly(false); }} className="mt-4 text-emerald-400 hover:underline">Återställ filter</button>
+                                    <button onClick={handleResetFilters} className="mt-4 text-emerald-400 hover:underline">Återställ filter</button>
                                 </div>
                             )}
                         </div>

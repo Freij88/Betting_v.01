@@ -25,10 +25,13 @@ export interface BestOddsResult {
     bestAway: number;
     awayBookie: string;
     marketOdds?: MarketOdds | null;
+    pinnacleOdds?: MarketOdds | null;
+    layOdds?: MarketOdds | null;
     fairOdds?: FairOdds | null;
     valueEdgeHome: number;
     valueEdgeDraw: number;
     valueEdgeAway: number;
+    isLayEdge: boolean;
 }
 
 export interface ArbitrageResult {
@@ -68,32 +71,55 @@ export function findBestOdds(match: OddsResponse, allowedBookmakers?: string[]):
 
     // Explicitly typed as requested to avoid "never" inference issues
     let marketOdds: MarketOdds | null = null;
+    let pinnacleOdds: MarketOdds | null = null;
+    let betfairOdds: MarketOdds | null = null;
+    let layOdds: MarketOdds | null = null;
 
-    // 1. Find Market Odds (Sharp)
-    // Priority: Pinnacle > Betfair Exchange > Others in SHARP_BOOKMAKERS
+    // 1. Find Market Odds (Sharp) & Lay Odds
+    // Priority: Betfair Exchange > Pinnacle
     for (const bookie of match.bookmakers) {
         if (SHARP_BOOKMAKERS.includes(bookie.key)) {
-            // If we don't have market odds yet, OR if this is Pinnacle (override any previous sharp), OR if this is Betfair Exchange and we don't have Pinnacle yet
-            const isPinnacle = bookie.key === 'pinnacle';
-            const isBetfair = bookie.key === 'betfair_ex_eu';
-            const currentIsPinnacle = marketOdds?.bookie === 'Pinnacle';
-
-            if (!marketOdds || (isPinnacle && !currentIsPinnacle) || (isBetfair && !currentIsPinnacle && !marketOdds)) {
-                let home = 0, draw = 0, away = 0;
-                for (const market of bookie.markets) {
-                    if (market.key === 'h2h') {
-                        for (const outcome of market.outcomes) {
-                            if (outcome.name === match.home_team) home = outcome.price;
-                            else if (outcome.name === match.away_team) away = outcome.price;
-                            else if (outcome.name === 'Draw') draw = outcome.price;
-                        }
+            // Check for Back Odds (h2h)
+            let home = 0, draw = 0, away = 0;
+            for (const market of bookie.markets) {
+                if (market.key === 'h2h') {
+                    for (const outcome of market.outcomes) {
+                        if (outcome.name === match.home_team) home = outcome.price;
+                        else if (outcome.name === match.away_team) away = outcome.price;
+                        else if (outcome.name === 'Draw') draw = outcome.price;
                     }
                 }
-                if (home > 0 && draw > 0 && away > 0) {
-                    marketOdds = { home, draw, away, bookie: bookie.title };
+                // Check for Lay Odds (h2h_lay) - Only relevant for Exchanges like Betfair
+                if (market.key === 'h2h_lay') {
+                    let lHome = 0, lDraw = 0, lAway = 0;
+                    for (const outcome of market.outcomes) {
+                        if (outcome.name === match.home_team) lHome = outcome.price;
+                        else if (outcome.name === match.away_team) lAway = outcome.price;
+                        else if (outcome.name === 'Draw') lDraw = outcome.price;
+                    }
+                    if (lHome > 0 && lDraw > 0 && lAway > 0) {
+                        layOdds = { home: lHome, draw: lDraw, away: lAway, bookie: bookie.title };
+                    }
+                }
+            }
+
+            if (home > 0 && draw > 0 && away > 0) {
+                const oddsObj = { home, draw, away, bookie: bookie.title };
+
+                if (bookie.key === 'pinnacle') {
+                    pinnacleOdds = oddsObj;
+                } else if (bookie.key === 'betfair_ex_eu') {
+                    betfairOdds = oddsObj;
                 }
             }
         }
+    }
+
+    // Set Market Odds based on priority: Betfair > Pinnacle
+    if (betfairOdds) {
+        marketOdds = betfairOdds;
+    } else if (pinnacleOdds) {
+        marketOdds = pinnacleOdds;
     }
 
     // 2. Calculate Fair Odds (No-Vig)
@@ -131,11 +157,25 @@ export function findBestOdds(match: OddsResponse, allowedBookmakers?: string[]):
         }
     }
 
-    // 4. Calculate Value Edge (vs Fair Odds)
-    // Edge = (BestOdds / FairOdds) - 1
-    const valueEdgeHome = fairOdds ? ((bestHome / fairOdds.home) - 1) * 100 : 0;
-    const valueEdgeDraw = fairOdds ? ((bestDraw / fairOdds.draw) - 1) * 100 : 0;
-    const valueEdgeAway = fairOdds ? ((bestAway / fairOdds.away) - 1) * 100 : 0;
+    // 4. Calculate Value Edge
+    // Priority 1: Lay Odds (Direct Edge) -> Edge = (BestOdds / LayOdds) - 1
+    // Priority 2: Fair Odds (No-Vig) -> Edge = (BestOdds / FairOdds) - 1
+
+    let valueEdgeHome = 0;
+    let valueEdgeDraw = 0;
+    let valueEdgeAway = 0;
+    let isLayEdge = false;
+
+    if (layOdds) {
+        valueEdgeHome = bestHome > 0 ? ((bestHome / layOdds.home) - 1) * 100 : 0;
+        valueEdgeDraw = bestDraw > 0 ? ((bestDraw / layOdds.draw) - 1) * 100 : 0;
+        valueEdgeAway = bestAway > 0 ? ((bestAway / layOdds.away) - 1) * 100 : 0;
+        isLayEdge = true;
+    } else if (fairOdds) {
+        valueEdgeHome = bestHome > 0 ? ((bestHome / fairOdds.home) - 1) * 100 : 0;
+        valueEdgeDraw = bestDraw > 0 ? ((bestDraw / fairOdds.draw) - 1) * 100 : 0;
+        valueEdgeAway = bestAway > 0 ? ((bestAway / fairOdds.away) - 1) * 100 : 0;
+    }
 
     return {
         bestHome,
@@ -145,10 +185,13 @@ export function findBestOdds(match: OddsResponse, allowedBookmakers?: string[]):
         bestAway,
         awayBookie,
         marketOdds,
+        pinnacleOdds,
+        layOdds,
         fairOdds,
         valueEdgeHome,
         valueEdgeDraw,
-        valueEdgeAway
+        valueEdgeAway,
+        isLayEdge
     };
 }
 

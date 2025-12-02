@@ -32,7 +32,7 @@ export async function getOdds(sportKey: string): Promise<OddsResponse[]> {
     }
 
     try {
-        const url = `${BASE_URL}/${sportKey}/odds/?regions=eu&markets=h2h&oddsFormat=decimal&apiKey=${apiKey}`;
+        const url = `${BASE_URL}/${sportKey}/odds/?regions=eu&markets=h2h,h2h_lay&oddsFormat=decimal&apiKey=${apiKey}`;
         const response = await fetch(url, { cache: 'no-store' });
 
         if (!response.ok) {
