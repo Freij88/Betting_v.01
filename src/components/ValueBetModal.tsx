@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { OddsResponse } from '@/src/types/odds';
+import { analyzeMatchWithGemini, analyzeMatchHistory } from '@/src/app/actions';
+import { HeadToHeadStats, TeamForm } from '@/src/lib/historical-data';
 
 interface ValueBetModalProps {
     match: OddsResponse;
@@ -15,6 +17,24 @@ interface ValueBetModalProps {
 export default function ValueBetModal({ match, selection, myOdds, sharpOdds, bookie, onClose }: ValueBetModalProps) {
     const [bankroll, setBankroll] = useState<number>(5000);
     const [kellyMultiplier, setKellyMultiplier] = useState<number>(0.30);
+    const [analysis, setAnalysis] = useState<string | null>(null);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+    // Historical Data State
+    const [history, setHistory] = useState<{ h2h: HeadToHeadStats, homeForm: TeamForm, awayForm: TeamForm } | null>(null);
+    const [loadingHistory, setLoadingHistory] = useState(false);
+
+    const handleAnalyze = async () => {
+        setIsAnalyzing(true);
+        try {
+            const result = await analyzeMatchWithGemini(match, { myOdds, sharpOdds, bookie });
+            setAnalysis(result);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
 
     // Load bankroll from localStorage on mount
     useEffect(() => {
@@ -22,7 +42,23 @@ export default function ValueBetModal({ match, selection, myOdds, sharpOdds, boo
         if (savedBankroll) {
             setBankroll(parseFloat(savedBankroll));
         }
-    }, []);
+
+        // Load historical data
+        async function loadHistory() {
+            setLoadingHistory(true);
+            try {
+                const data = await analyzeMatchHistory(match.home_team, match.away_team, match.sport_key);
+                if (data) {
+                    setHistory(data);
+                }
+            } catch (e) {
+                console.error("Failed to load history", e);
+            } finally {
+                setLoadingHistory(false);
+            }
+        }
+        loadHistory();
+    }, [match.sport_key, match.home_team, match.away_team]);
 
     // Save bankroll to localStorage when it changes
     useEffect(() => {
@@ -138,6 +174,106 @@ export default function ValueBetModal({ match, selection, myOdds, sharpOdds, boo
                             <div className="text-red-400 font-bold text-xl mb-2">INGET VÄRDE ⚠️</div>
                             <p className="text-slate-400 text-sm">Marknaden indikerar att detta odds är för lågt.</p>
                             <div className="mt-4 text-xs font-mono text-red-400/60">ROI: {edgePercentage.toFixed(2)}%</div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Historical Insights */}
+                <div className="mb-6 bg-slate-800/30 rounded-xl p-4 border border-slate-700/50">
+                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">📊 Historisk Analys</h3>
+
+                    {loadingHistory ? (
+                        <div className="text-xs text-slate-500 animate-pulse">Laddar historik...</div>
+                    ) : history ? (
+                        <div className="space-y-4">
+                            {/* H2H Summary */}
+                            <div className="grid grid-cols-3 gap-2 text-center bg-slate-900/50 p-3 rounded-lg">
+                                <div>
+                                    <div className="text-xs text-slate-500">Hemmavinst</div>
+                                    <div className="font-bold text-emerald-400">{history.h2h.homeWins}</div>
+                                </div>
+                                <div>
+                                    <div className="text-xs text-slate-500">Oavgjort</div>
+                                    <div className="font-bold text-slate-300">{history.h2h.draws}</div>
+                                </div>
+                                <div>
+                                    <div className="text-xs text-slate-500">Bortavinst</div>
+                                    <div className="font-bold text-emerald-400">{history.h2h.awayWins}</div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                {/* Home Form */}
+                                <div>
+                                    <div className="text-xs text-slate-500 mb-1">{match.home_team} Form</div>
+                                    <div className="flex gap-1">
+                                        {history.homeForm.formString.split('-').map((res, i) => (
+                                            <span key={i} className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${res === 'W' ? 'bg-emerald-500/20 text-emerald-400' : res === 'D' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>
+                                                {res}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                                {/* Away Form */}
+                                <div>
+                                    <div className="text-xs text-slate-500 mb-1">{match.away_team} Form</div>
+                                    <div className="flex gap-1">
+                                        {history.awayForm.formString.split('-').map((res, i) => (
+                                            <span key={i} className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${res === 'W' ? 'bg-emerald-500/20 text-emerald-400' : res === 'D' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>
+                                                {res}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Recent Meetings List */}
+                            <div>
+                                <div className="text-xs text-slate-500 mb-2">Senaste möten</div>
+                                <div className="space-y-1">
+                                    {history.h2h.matches.slice(0, 3).map((m, i) => (
+                                        <div key={i} className="flex justify-between text-xs p-2 bg-slate-800/50 rounded border border-slate-700/30">
+                                            <span className="text-slate-400">{m.date}</span>
+                                            <span className="text-slate-300">{m.homeTeam} - {m.awayTeam}</span>
+                                            <span className="font-bold text-white">{m.homeGoals}-{m.awayGoals}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="text-xs text-slate-600 italic">Ingen historik hittades för dessa lag.</div>
+                    )}
+                </div>
+
+                {/* Gemini Analysis */}
+                <div className="mt-6">
+                    {!analysis ? (
+                        <button
+                            onClick={handleAnalyze}
+                            disabled={isAnalyzing}
+                            className="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
+                        >
+                            {isAnalyzing ? (
+                                <>
+                                    <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                                    Analyserar...
+                                </>
+                            ) : (
+                                <>
+                                    <span>🤖</span> Fråga Gemini
+                                </>
+                            )}
+                        </button>
+                    ) : (
+                        <div className="bg-gradient-to-br from-blue-900/40 to-purple-900/40 border border-blue-500/30 rounded-xl p-4 text-left">
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className="text-xl">🤖</span>
+                                <h3 className="font-bold text-blue-200">Gemini Analys</h3>
+                            </div>
+                            <div className="text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">
+                                {analysis}
+                            </div>
                         </div>
                     )}
                 </div>
