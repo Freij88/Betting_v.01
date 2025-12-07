@@ -10,6 +10,8 @@ import { model } from '@/src/lib/gemini';
 
 import { prisma } from '@/src/lib/db';
 
+import { getMatchAnalysisData } from '@/src/lib/soccer-api';
+
 export async function analyzeMatchWithGemini(matchData: any, odds: any, history: any = null) {
     // 1. Check Cache
     try {
@@ -38,10 +40,21 @@ export async function analyzeMatchWithGemini(matchData: any, odds: any, history:
         console.warn("Cache check failed", e);
     }
 
+    // Fetch fresh H2H data from SoccerDataAPI
+    let apiData = null;
+    try {
+        apiData = await getMatchAnalysisData(matchData.home_team, matchData.away_team);
+    } catch (e) {
+        console.warn("SoccerDataAPI fetch failed:", e);
+    }
+
     const prompt = `Du är en professionell sportsbetting-analytiker. Här är datan för en match:
    Match: ${JSON.stringify(matchData)}
    Odds: ${JSON.stringify(odds)}
    Historisk Data (CSV): ${history ? JSON.stringify(history) : "Ingen historisk data tillgänglig."}
+   ${apiData ? `FÄRSK DATA (H2H & Form från API):
+   Hemmalaget hemma-stats: ${JSON.stringify(apiData.team1_at_home || "N/A")}
+   Inbördes möten (Overall): ${JSON.stringify(apiData.overall || "N/A")}` : "Ingen färsk API-data tillgänglig."}
    
    Uppgift:
    1. ANVÄND DIN SÖKFÖRMÅGA (Google Search) för att hitta:
@@ -49,7 +62,7 @@ export async function analyzeMatchWithGemini(matchData: any, odds: any, history:
       - Skadeläget i trupperna JUST NU.
       - Bekräftade startelvor (om matchen är inom 1h) eller förväntade elvor.
    
-   2. Jämför den historiska datan (CSV) med den färska informationen du hittar online. Ser du några avvikelser? (T.ex. Historiskt starka hemma, men förlorade igår).
+   2. Jämför den historiska datan (CSV) och API-datan med den färska informationen du hittar online. Ser du några avvikelser?
    
    3. Identifiera om det finns värde i oddsen (jämför Back vs Lay om det finns).
    
