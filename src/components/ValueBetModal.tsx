@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { OddsResponse } from '@/src/types/odds';
 import { analyzeMatchWithGemini, analyzeMatchHistory } from '@/src/app/actions';
-import { HeadToHeadStats, TeamForm } from '@/src/lib/historical-data';
+import { HeadToHeadStats, TeamForm } from '@/src/lib/stats-engine';
 
 interface ValueBetModalProps {
     match: OddsResponse;
@@ -27,7 +27,7 @@ export default function ValueBetModal({ match, selection, myOdds, sharpOdds, boo
     const handleAnalyze = async () => {
         setIsAnalyzing(true);
         try {
-            const result = await analyzeMatchWithGemini(match, { myOdds, sharpOdds, bookie });
+            const result = await analyzeMatchWithGemini(match, { myOdds, sharpOdds, bookie }, history);
             setAnalysis(result);
         } catch (e) {
             console.error(e);
@@ -233,7 +233,7 @@ export default function ValueBetModal({ match, selection, myOdds, sharpOdds, boo
                                 <div className="space-y-1">
                                     {history.h2h.matches.slice(0, 3).map((m, i) => (
                                         <div key={i} className="flex justify-between text-xs p-2 bg-slate-800/50 rounded border border-slate-700/30">
-                                            <span className="text-slate-400">{m.date}</span>
+                                            <span className="text-slate-400">{new Date(m.date).toLocaleDateString('sv-SE')}</span>
                                             <span className="text-slate-300">{m.homeTeam} - {m.awayTeam}</span>
                                             <span className="font-bold text-white">{m.homeGoals}-{m.awayGoals}</span>
                                         </div>
@@ -270,6 +270,9 @@ export default function ValueBetModal({ match, selection, myOdds, sharpOdds, boo
                             <div className="flex items-center gap-2 mb-2">
                                 <span className="text-xl">🤖</span>
                                 <h3 className="font-bold text-blue-200">Gemini Analys</h3>
+                                <span className="ml-2 px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase rounded-full border border-emerald-500/30 animate-pulse">
+                                    🟢 Live Data Active
+                                </span>
                             </div>
                             <div className="text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">
                                 {analysis}
@@ -280,8 +283,28 @@ export default function ValueBetModal({ match, selection, myOdds, sharpOdds, boo
 
                 {/* Footer / CTA */}
                 {edge > 0 && (
-                    <div className="mt-6">
-                        <button className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-black font-bold rounded-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-emerald-900/20">
+                    <div className="mt-6 flex gap-3">
+                        <button
+                            onClick={async () => {
+                                const { createBet } = await import('@/src/app/actions/bet-actions');
+                                await createBet({
+                                    selection,
+                                    odds: myOdds,
+                                    stake,
+                                    bookmaker: bookie,
+                                    sport: match.sport_key,
+                                    homeTeam: match.home_team,
+                                    awayTeam: match.away_team,
+                                    date: match.commence_time,
+                                    notes: `Edge: ${edgePercentage.toFixed(2)}%`
+                                });
+                                alert('Spelet har loggats i din tracker!');
+                            }}
+                            className="flex-1 py-4 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl transition-all"
+                        >
+                            📝 Logga Spel
+                        </button>
+                        <button className="flex-[2] py-4 bg-emerald-500 hover:bg-emerald-400 text-black font-bold rounded-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-emerald-900/20">
                             Placera spel hos {bookie}
                         </button>
                     </div>

@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  bets      Bet[]
+}
+
+model Match {
+  id          String   @id @default(cuid())
+  externalId  String   @unique
+  sportKey    String
+  sportTitle  String
+  commenceTime DateTime
+  homeTeam    String
+  awayTeam    String
+  
+  analysis    String?  // Cache for Gemini analysis
+  analysisCreatedAt DateTime?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  odds        Odds[]
+  bets        Bet[]
+  
+  @@index([sportKey])
+  @@index([commenceTime])
+}
+
+model Odds {
+  id          String   @id @default(cuid())
+  matchId     String
+  match       Match    @relation(fields: [matchId], references: [id])
+  bookmaker   String
+  market      String
+  timestamp   DateTime
+  
+  homeOdds    Float?
+  drawOdds    Float?
+  awayOdds    Float?
+  
+  data        Json?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([matchId])
+  @@index([bookmaker])
+}
+
+model Bet {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  matchId     String
+  match       Match    @relation(fields: [matchId], references: [id])
+  
+  selection   String
+  odds        Float
+  stake       Float
+  potentialWin Float
+  
+  status      String   // "PENDING", "WON", "LOST", "VOID"
+  result      Float?
+  
+  placedAt    DateTime @default(now())
+  settledAt   DateTime?
+  
+  notes       String?
+}
+
+model TeamStats {
+  id          String   @id @default(cuid())
+  teamName    String
+  sport       String
+  
+  matchesPlayed Int      @default(0)
+  wins          Int      @default(0)
+  draws         Int      @default(0)
+  losses        Int      @default(0)
+  goalsFor      Int      @default(0)
+  goalsAgainst  Int      @default(0)
+  
+  form        Json?
+  
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([teamName, sport])
+}
+
+model HistoricalMatch {
+  id        String   @id @default(cuid())
+  sport     String
+  league    String
+  date      DateTime
+  homeTeam  String
+  awayTeam  String
+  homeGoals Int
+  awayGoals Int
+  result    String   // 'H', 'D', 'A'
+  
+  // Odds (optional)
+  pinnacleHome Float?
+  pinnacleDraw Float?
+  pinnacleAway Float?
+  
+  createdAt DateTime @default(now())
+  
+  @@index([homeTeam])
+  @@index([awayTeam])
+  @@index([date])
+}
