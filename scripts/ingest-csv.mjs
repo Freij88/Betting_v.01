@@ -41,20 +41,32 @@ async function ingestCSV(filePath, league) {
                         await updateTeamStats(awayTeam, league, awayGoals, homeGoals, result === 'A' ? 'W' : result === 'D' ? 'D' : 'L');
 
                         // Insert Historical Match
+                        const matchData = {
+                            sport: league, // Keep sport field
+                            league: row.League || league, // Use row.League if available, else fallback to parameter
+                            date: new Date(row.Date.split('/').reverse().join('-')), // DD/MM/YYYY -> YYYY-MM-DD
+                            homeTeam: row.Home,
+                            awayTeam: row.Away,
+                            homeGoals: parseInt(row.HG),
+                            awayGoals: parseInt(row.AG),
+                            result: row.Res,
+                            season: row.Season,
+                            // Deep Stats (Safe parsing)
+                            homeShots: row.HS ? parseInt(row.HS) : null,
+                            awayShots: row.AS ? parseInt(row.AS) : null,
+                            homeCorners: row.HC ? parseInt(row.HC) : null,
+                            awayCorners: row.AC ? parseInt(row.AC) : null,
+                            homeYellow: row.HY ? parseInt(row.HY) : null,
+                            awayYellow: row.AY ? parseInt(row.AY) : null,
+                            homeRed: row.HR ? parseInt(row.HR) : null,
+                            awayRed: row.AR ? parseInt(row.AR) : null,
+                            pinnacleHome: parseFloat(row.PSCH || row.PSH || row.B365H || '0') || null,
+                            pinnacleDraw: parseFloat(row.PSCD || row.PSD || row.B365D || '0') || null,
+                            pinnacleAway: parseFloat(row.PSCA || row.PSA || row.B365A || '0') || null
+                        };
+
                         await prisma.historicalMatch.create({
-                            data: {
-                                sport: league,
-                                league: league,
-                                date: date,
-                                homeTeam: homeTeam,
-                                awayTeam: awayTeam,
-                                homeGoals: homeGoals,
-                                awayGoals: awayGoals,
-                                result: result,
-                                pinnacleHome: parseFloat(row.PSCH || row.PSH || row.B365H || '0') || null,
-                                pinnacleDraw: parseFloat(row.PSCD || row.PSD || row.B365D || '0') || null,
-                                pinnacleAway: parseFloat(row.PSCA || row.PSA || row.B365A || '0') || null
-                            }
+                            data: matchData
                         });
                     }
                     console.log(`Finished ingesting ${league}`);

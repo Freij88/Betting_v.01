@@ -3,6 +3,8 @@
 import { prisma } from '@/src/lib/db';
 import { revalidatePath } from 'next/cache';
 
+import { auth, currentUser } from "@clerk/nextjs/server";
+
 export async function createBet(data: {
     matchId?: string;
     selection: string;
@@ -16,16 +18,23 @@ export async function createBet(data: {
     notes?: string;
 }) {
     try {
-        // For MVP, we'll create a "default" user if one doesn't exist
-        // In a real app, we'd get the userId from the session
+        // ... inside createBet ...
+        const { userId } = await auth();
+        if (!userId) throw new Error("Unauthorized");
+
+        // Find or create user in our DB
         let user = await prisma.user.findUnique({
-            where: { email: 'demo@example.com' },
+            where: { externalId: userId },
         });
 
         if (!user) {
+            const clerkUser = await currentUser();
+            const email = clerkUser?.emailAddresses[0]?.emailAddress || `user-${userId}@example.com`;
+
             user = await prisma.user.create({
                 data: {
-                    email: 'demo@example.com',
+                    externalId: userId,
+                    email: email,
                 },
             });
         }
@@ -83,8 +92,11 @@ export async function createBet(data: {
 
 export async function getBets() {
     try {
+        const { userId } = await auth();
+        if (!userId) return [];
+
         const user = await prisma.user.findUnique({
-            where: { email: 'demo@example.com' },
+            where: { externalId: userId },
         });
 
         if (!user) return [];

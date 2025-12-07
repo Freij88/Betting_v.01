@@ -3,12 +3,13 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
   id        String   @id @default(cuid())
+  externalId String  @unique // Clerk ID
   email     String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -99,8 +100,6 @@ model TeamStats {
 
 model HistoricalMatch {
   id        String   @id @default(cuid())
-  sport     String
-  league    String
   date      DateTime
   homeTeam  String
   awayTeam  String
@@ -108,14 +107,23 @@ model HistoricalMatch {
   awayGoals Int
   result    String   // 'H', 'D', 'A'
   
+  // Deep Stats (Optional, populated if CSV has them)
+  homeShots     Int?
+  awayShots     Int?
+  homeCorners   Int?
+  awayCorners   Int?
+  homeYellow    Int?
+  awayYellow    Int?
+  homeRed       Int?
+  awayRed       Int?
+
+  league    String?
+  season    String?
+  
   // Odds (optional)
   pinnacleHome Float?
   pinnacleDraw Float?
   pinnacleAway Float?
   
   createdAt DateTime @default(now())
-  
-  @@index([homeTeam])
-  @@index([awayTeam])
-  @@index([date])
 }

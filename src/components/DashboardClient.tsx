@@ -7,6 +7,7 @@ import { fetchOddsAction } from '@/src/app/actions';
 import { SWEDISH_BOOKMAKERS } from '@/src/lib/constants';
 import ValueBetModal from './ValueBetModal';
 import BookieSelector from './BookieSelector';
+import { UserButton, SignInButton, SignedIn, SignedOut } from "@clerk/nextjs";
 
 interface DashboardClientProps {
     initialOdds: OddsResponse[];
@@ -171,10 +172,25 @@ export default function DashboardClient({ initialOdds, sports, debugStatus }: Da
                 <div className="max-w-6xl mx-auto">
                     {/* Header & Filters */}
                     <div className="mb-8">
-                        <h1 className="text-3xl font-bold text-white mb-6 flex items-center gap-3">
-                            {sports.find(s => s.key === selectedSport)?.title || 'Odds'}
-                            {loading && <div className="animate-spin h-6 w-6 border-2 border-emerald-500 border-t-transparent rounded-full"></div>}
-                        </h1>
+                        <div className="flex justify-between items-center mb-6">
+                            <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+                                {sports.find(s => s.key === selectedSport)?.title || 'Odds'}
+                                {loading && <div className="animate-spin h-6 w-6 border-2 border-emerald-500 border-t-transparent rounded-full"></div>}
+                            </h1>
+
+                            <div className="flex items-center gap-4">
+                                <SignedOut>
+                                    <SignInButton mode="modal">
+                                        <button className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-colors">
+                                            Logga in
+                                        </button>
+                                    </SignInButton>
+                                </SignedOut>
+                                <SignedIn>
+                                    <UserButton afterSignOutUrl="/" />
+                                </SignedIn>
+                            </div>
+                        </div>
 
                         {/* Debug Info */}
                         <div className="mb-4 space-y-2">

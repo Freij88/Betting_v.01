@@ -6,9 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "next lint",
+    "check": "node scripts/check-env.js"
   },
   "dependencies": {
+    "@clerk/nextjs": "^6.36.0",
     "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.0.0",
     "@types/papaparse": "^5.5.1",
